@@ -289,6 +289,7 @@
             <button class="tab" onclick="switchTab(1)">📋 Items</button>
             <button class="tab" onclick="switchTab(2)">⚙️ Settings</button>
             <button class="tab" onclick="switchTab(3)">📸 Generate</button>
+            <button class="tab" id="tab-users" onclick="switchTab(4)" style="display:none;">👥 Users</button>
         </div>
 
         <!-- Add Tab -->
@@ -339,21 +340,6 @@
                 <button class="btn btn-primary" onclick="addWt()">Add</button>
             </div>
             <div id="wts"></div>
-
-            <!-- User Management (admin-only, populated by JS) -->
-            <div id="users-section" style="display:none;">
-                <div class="title">👥 Staff Users</div>
-                <div style="background:#fef9c3;border:2px solid #eab308;border-radius:8px;padding:10px;margin-bottom:10px;font-size:12px;color:#713f12;">
-                    Admins are managed in the script code only (for safety). You can add or remove <b>staff</b> users from here. New staff can add and edit items but cannot delete.
-                </div>
-                <div class="inline">
-                    <input type="email" id="new-user-email" placeholder="newstaff@gmail.com" style="text-transform:lowercase;">
-                    <button class="btn btn-primary" onclick="addUserClick()">Add Staff</button>
-                </div>
-                <div style="font-size:11px;color:#64748b;margin:4px 0 12px;">After adding, the user can sign in and will see Staff access. Refresh the user list with the button below to confirm.</div>
-                <div id="users-list" style="margin-top:12px;"></div>
-                <button class="btn btn-secondary" onclick="loadUsers()" style="width:100%;margin-top:8px;">🔄 Refresh user list</button>
-            </div>
         </div>
 
         <!-- Generate Tab -->
@@ -371,6 +357,21 @@
                 <button class="btn btn-secondary" onclick="openNew()">🔍 Open</button>
             </div>
         </div>
+
+        <!-- Users Tab (admin-only) -->
+        <div class="content" id="users-section">
+            <div class="title">👥 User Management</div>
+            <div style="background:#fef9c3;border:2px solid #eab308;border-radius:8px;padding:10px;margin-bottom:10px;font-size:12px;color:#713f12;">
+                Admins are managed in the script code only (for safety). You can add or remove <b>staff</b> users from here. New staff can add and edit items but cannot delete.
+            </div>
+            <div class="inline">
+                <input type="email" id="new-user-email" placeholder="newstaff@gmail.com" style="text-transform:lowercase;">
+                <button class="btn btn-primary" onclick="addUserClick()">Add Staff</button>
+            </div>
+            <div style="font-size:11px;color:#64748b;margin:4px 0 12px;">After adding, the user can sign in and will see Staff access.</div>
+            <div id="users-list" style="margin-top:12px;"></div>
+            <button class="btn btn-secondary" onclick="loadUsers()" style="width:100%;margin-top:8px;">🔄 Refresh user list</button>
+        </div>
     </div>
 
     <script>
@@ -378,7 +379,7 @@
         // 🔗 GOOGLE SHEETS CONFIGURATION
         // ==========================================
         // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
-        const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzQpVAUoseWnuz2mC4nxvi2LN5iHvgUrs1x7snX99JfDmVFq37B2RKYvsQUvtXOACHv/exec';
+        const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzoFw0urxOLSo720mYsKeTD828jXkjpuIT0yZAIUtjwdn8Fm0yfP9Pi_u8O2btvGxg/exec';
 
         // PASTE YOUR GOOGLE OAUTH CLIENT ID HERE (see instructions):
         // Create one at https://console.cloud.google.com  ->  APIs & Services  ->  Credentials
@@ -1232,6 +1233,7 @@ function generateImageInternal() {
             });
             if(n===3) loadGen();
             if(n===1) filter();
+            if(n===4) loadUsers();
         }
 
         // ===================== LOGIN / AUTH =====================
@@ -1296,16 +1298,14 @@ function generateImageInternal() {
                 (role === 'admin' ? 'Admin (add/edit/delete)' :
                  role === 'staff' ? 'Staff (add/edit)' :
                  'Offline (add/edit only)');
-            // Show user-management UI for admins only
-            document.getElementById('users-section').style.display =
+            // Show Users tab for admins only
+            document.getElementById('tab-users').style.display =
                 (role === 'admin') ? '' : 'none';
             init();                 // load local data + render
             // Pull the latest from the cloud so all devices match.
             if (SHEET_URL && SHEET_URL !== 'PASTE_YOUR_WEB_APP_URL_HERE') {
                 loadFromSheet(true).catch(function(){});
             }
-            // Auto-load the user list once for admins
-            if (role === 'admin') loadUsers();
         }
 
         function logout() {
@@ -1317,8 +1317,8 @@ function generateImageInternal() {
             document.getElementById('app-container').style.display = 'none';
             document.getElementById('login-screen').style.display = 'flex';
             document.getElementById('login-msg').textContent = '';
-            const us = document.getElementById('users-section');
-            if (us) us.style.display = 'none';
+            const tu = document.getElementById('tab-users');
+            if (tu) tu.style.display = 'none';
             renderGoogleButton();
         }
 
