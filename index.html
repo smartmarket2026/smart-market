@@ -431,12 +431,52 @@
             return USER_EMAIL ? '&email=' + encodeURIComponent(USER_EMAIL) : '';
         }
 
+        // ---- JSONP helper ----
+        // CORS blocks browser fetch() from reading Apps Script responses, but a <script> tag
+        // bypasses that. Apps Script returns its result as a JS function call when we pass a
+        // callback name. This helper turns that into a Promise.
+        let JSONP_COUNTER = 0;
+        function jsonpRequest(url, timeoutMs) {
+            return new Promise((resolve, reject) => {
+                const cbName = '__smjsonp_' + (++JSONP_COUNTER) + '_' + Date.now();
+                const sep = url.indexOf('?') === -1 ? '?' : '&';
+                const fullUrl = url + sep + 'callback=' + cbName;
+                const script = document.createElement('script');
+                let done = false;
+                const timer = setTimeout(() => {
+                    if (done) return;
+                    done = true;
+                    cleanup();
+                    reject(new Error('JSONP timeout'));
+                }, timeoutMs || 15000);
+                function cleanup() {
+                    try { delete window[cbName]; } catch (_) { window[cbName] = undefined; }
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                }
+                window[cbName] = function(data) {
+                    if (done) return;
+                    done = true;
+                    clearTimeout(timer);
+                    cleanup();
+                    resolve(data);
+                };
+                script.onerror = function() {
+                    if (done) return;
+                    done = true;
+                    clearTimeout(timer);
+                    cleanup();
+                    reject(new Error('JSONP script load failed'));
+                };
+                script.src = fullUrl;
+                document.head.appendChild(script);
+            });
+        }
+
         // Ask the Apps Script who we are and what we can do (admin/staff).
-        // If it fails (offline / file://), default to NO delete for safety.
+        // If it fails (offline / network), default to NO delete for safety.
         function checkPermission() {
             if (!SHEET_URL || SHEET_URL === 'PASTE_YOUR_WEB_APP_URL_HERE') return;
-            fetch(SHEET_URL + '?action=whoami' + authParam(), {method: 'GET'})
-                .then(r => r.json())
+            jsonpRequest(SHEET_URL + '?action=whoami' + authParam())
                 .then(res => {
                     if (res && res.success) {
                         CAN_DELETE = !!res.canDelete;
@@ -445,11 +485,11 @@
                             (USER_EMAIL || res.email || 'Signed in') + '  •  ' +
                             (role === 'admin' ? 'Admin (add/edit/delete)' :
                              role === 'staff' ? 'Staff (add/edit)' : 'No access');
-                        refresh();  // re-render so delete buttons appear/hide correctly
+                        refresh();
                     }
                 })
                 .catch(() => {
-                    CAN_DELETE = false;  // can't verify -> safest to disable delete
+                    CAN_DELETE = false;
                 });
         }
         
@@ -499,18 +539,25 @@
             if (IS_LOADING) return;
             IS_LOADING = true;
 
-            // STEP 1: Push local data up to the sheet, then STEP 2: pull it back down.
+            // STEP 1: Push local data up via JSONP. STEP 2: pull the latest back down.
             showStatus('☁️ Uploading to cloud...', 'info');
 
             const payload = encodeURIComponent(JSON.stringify({i: D.i, c: D.c, w: D.w}));
             const saveUrl = SHEET_URL + '?action=saveData&data=' + payload + authParam();
 
-            fetch(saveUrl, {method: 'GET'})
-                .then(r => r.json())
+            // If the URL would exceed the safe length, skip JSONP and use the form fallback
+            // (no length limit) which still works fine even though we won't read the response.
+            if (saveUrl.length > 7500) {
+                syncFallbackFormPost();
+                IS_LOADING = false;
+                return;
+            }
+
+            jsonpRequest(saveUrl, 30000)
                 .then(res => {
                     if (res && res.success) {
                         showStatus('⬇️ Saved! Now refreshing from cloud...', 'info');
-                        return loadFromSheet(true);  // silent reload
+                        return loadFromSheet(true);
                     } else {
                         throw new Error(res && res.error ? res.error : 'Save failed');
                     }
@@ -520,8 +567,7 @@
                 })
                 .catch(err => {
                     console.error('Sync error:', err);
-                    // If fetch is blocked (CORS on file://), fall back to the form-POST method
-                    // so the save still happens even though we can't read the response.
+                    // Last-resort fallback so the save still happens.
                     syncFallbackFormPost();
                 })
                 .finally(() => {
@@ -573,8 +619,7 @@
                 }
                 if (!silent) showStatus('⬇️ Loading from cloud...', 'info');
 
-                fetch(SHEET_URL + '?action=getAllData', {method: 'GET'})
-                    .then(r => r.json())
+                jsonpRequest(SHEET_URL + '?action=getAllData' + authParam())
                     .then(res => {
                         if (res && res.success && res.data) {
                             // Keep the embedded logo + contact, replace the rest from cloud
@@ -1107,8 +1152,7 @@ function generateImageInternal() {
                 startApp('');
                 return;
             }
-            fetch(SHEET_URL + '?action=whoami' + authParam(), {method: 'GET'})
-                .then(r => r.json())
+            jsonpRequest(SHEET_URL + '?action=whoami' + authParam())
                 .then(res => {
                     document.getElementById('login-spinner').style.display = 'none';
                     if (res && res.success && res.role) {
